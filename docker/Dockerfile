@@ -9,7 +9,7 @@ WORKDIR /app
 RUN addgroup --system appgroup && adduser --system --ingroup appgroup appuser
 
 # copy requierment terlebih dahulu untuk memanfaatkan Docker layer caching
-COPY app/requirments.txt .
+COPY app/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # copy source code aplikasi dengan kepimilikan langsung
