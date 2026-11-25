@@ -1,0 +1,137 @@
+---
+# set up mariadb server on db-vault
+- name: Setup MariaDB pada db-vault
+  hosts: db-vault
+  become: true
+  tasks:
+    - name: Install MariaDB Server
+      ansible.builtin.dnf:
+        name: mariadb-server
+        state: present
+
+    - name: Izinkan MariaDB listen di jaringan VLAN
+      ansible.builtin.copy:
+        dest: /etc/my.cnf.d/99-homelab.cnf
+        content: |
+          [mysqld]
+          bind-address = 0.0.0.0
+        mode: '0644'
+      notify: Restart mariadb
+
+    - name: Jalankan dan aktifkan MariaDB saat boot
+      ansible.builtin.service:
+        name: mariadb
+        state: started
+        enabled: true
+
+  handlers:
+    - name: Restart mariadb
+      ansible.builtin.service:
+        name: mariadb
+        state: restarted
+
+# set up stack on ci-jenkins
+- name: Setup Docker, Jenkins, dan Ansible pada ci-jenkins
+  hosts: ci-jenkins
+  become: true
+  tasks:
+    - name: Tambahkan repository Docker CE
+      ansible.builtin.get_url:
+        url: https://download.docker.com/linux/centos/docker-ce.repo
+        dest: /etc/yum.repos.d/docker-ce.repo
+        mode: '0644'
+
+    - name: Tambahkan repository Jenkins Stable
+      ansible.builtin.get_url:
+        url: https://pkg.jenkins.io/redhat-stable/jenkins.repo
+        dest: /etc/yum.repos.d/jenkins.repo
+        mode: '0644'
+
+    - name: Install Git, Ansible, Java 21, Fontconfig, Docker, dan Jenkins
+      ansible.builtin.dnf:
+        name:
+          - git
+          - ansible-core
+          - java-21-openjdk
+          - fontconfig
+          - docker-ce
+          - docker-ce-cli
+          - containerd.io
+          - jenkins
+        state: present
+
+    - name: Masukkan user ops dan jenkins ke grup docker
+      ansible.builtin.user:
+        name: "{{ item }}"
+        groups: docker
+        append: true
+      loop:
+        - ops
+        - jenkins
+
+    - name: Jalankan dan aktifkan Docker serta Jenkins
+      ansible.builtin.service:
+        name: "{{ item }}"
+        state: started
+        enabled: true
+      loop:
+        - docker
+        - jenkins
+
+# set up stack on k8s-prod
+- name: Setup Docker dan Nginx pada k8s-prod
+  hosts: k8s-prod
+  become: true
+  tasks:
+    - name: Tambahkan repository Docker CE
+      ansible.builtin.get_url:
+        url: https://download.docker.com/linux/centos/docker-ce.repo
+        dest: /etc/yum.repos.d/docker-ce.repo
+        mode: '0644'
+
+    - name: Install Docker CE dan Nginx
+      ansible.builtin.dnf:
+        name:
+          - docker-ce
+          - docker-ce-cli
+          - containerd.io
+          - nginx
+          - firewalld
+        state: present
+
+    - name: Masukkan user ops ke grup docker
+      ansible.builtin.user:
+        name: ops
+        groups: docker
+        append: true
+
+    - name: run and active firewalld before rule configuration
+      ansible.builtin.service:
+        name: firewalld
+        state: started
+        enabled: true 
+
+    - name: Buka port HTTP (80) di firewalld
+      ansible.builtin.command: firewall-cmd --permanent --add-service={{ item }}
+      loop:
+        - ssh
+        - http
+      register: fw_add
+      changed_when: "'ALREADY_ENABLED' not in fw_add.stderr"
+
+    - name: Reload firewalld jika ada aturan baru
+      ansible.builtin.command: firewall-cmd --reload
+      when: fw_add.changed
+
+    - name: Izinkan Nginx meneruskan trafik ke container Docker (SELinux)
+      ansible.builtin.command: setsebool -P httpd_can_network_connect 1
+      changed_when: false
+
+    - name: Jalankan dan aktifkan Docker serta Nginx
+      ansible.builtin.service:
+        name: "{{ item }}"
+        state: started
+        enabled: true
+      loop:
+        - docker
+        - nginx

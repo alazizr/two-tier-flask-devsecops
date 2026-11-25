@@ -1,19 +1,22 @@
 FROM python:3.11-slim
 
+ENV PYTHONDONTWRITEBYCODE=1 \
+    PYTHONUNBUFFERED=1
+
 WORKDIR /app
 
-RUN apt-get update && apt-get install -y \
-    gcc \
-    default-libmysqlclient-dev \
-    pkg-config \
-    && rm -rf /var/lib/apt/lists/*
+# buat non-root system user sesuai standar CIS Docker benchmarark
+RUN addgroup --system appgroup && adduser --system --ingroup appgroup appuser
 
-COPY app/requirements.txt .
-
+# copy requierment terlebih dahulu untuk memanfaatkan Docker layer caching
+COPY app/requirments.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY app/ .
+# copy source code aplikasi dengan kepimilikan langsung
+COPY --chown=appuser:appgroup app/ .
+
+USER appuser
 
 EXPOSE 5000
 
-CMD ["python", "app.py"]
+CMD ["gunicorn", "--bind", "0.0.0.0:5000", "--workers", "2", "app:app"]

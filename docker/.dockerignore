@@ -1,0 +1,9 @@
+.git
+.gitignore
+ansible/
+database/
+jenkins/
+sonar-project.properties
+README.md
+__pycache__/
+*.pyc
