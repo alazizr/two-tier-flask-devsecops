@@ -13,7 +13,7 @@ RUN addgroup --system appgroup && adduser --system --ingroup appgroup appuser
 
 # copy requierment terlebih dahulu untuk memanfaatkan Docker layer caching
 COPY app/requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt && \
     pip uninstall -y setuptools
 
 # copy source code aplikasi dengan kepimilikan langsung
