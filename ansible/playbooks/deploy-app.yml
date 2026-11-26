@@ -1,0 +1,79 @@
+---
+- name: deploy hardened two-tier flask app to k8s-prod
+  hosts: k8s-prod
+  become: true
+  vars: 
+    app_dir: /opt/flask-app
+    container_name: two-tier-flask
+    docker_image: "{{ image_name}}:{{ image_tag}}"
+  tasks:
+    - name: ensure the application directory is available
+      ansible.builtin.file:
+        path: "{{ app_dir }}"
+        state: directory
+        owner: root
+        group: root
+        mode: '0750'
+
+    - name: write the environment file securely (without leakingit to logs or the proces list)
+      ansible.builtin.copy:
+        dest: "{{ app_dir}}/.env"
+        owner: root
+        group: root
+        mode: '0600'
+        content: |
+          MYSQL_HOST=10.10.10.10
+          MYSQL_USER=flask-app
+          MYSQL_PASSWORD= {{ db_password }}
+          MYSQL_DB=devops
+          APP_VERSION={{ image_tag }}
+      no_log: true
+
+    - name: set up nginx reverse proxy configuration
+      ansible.builtin.copy:
+        src: ~/two-tier-flask-devsecops/ansible/files/flask-app.conf
+        dest: /etc/nginx/conf.d/flask-app.conf
+        owner: root
+        group: root
+        mode: '0644'
+      notify: Reload nginx
+
+    - name: validate nginx syntax before reloading
+      ansible.builtin.command: nginx -t
+      changed_when: false
+
+    - name: make sure the nginx service is active and running
+      ansible.builtin.service:
+        name: nginx
+        state: started
+        enabled: true
+
+    - name: pull new image docker
+      ansible.builtin.commad: "docker pull {{ docker_name}}"
+      register: pull_result
+      chnaged_when: "'Downloaded newer image' in pull_result.stdout" 
+
+    - name: remove the old container if it exist 
+      ansible.builtin.commad: "docker rm -f {{container_name }}"
+      register: rm_result
+      failed_when: false
+      changed_when: rm_result.rc == 0
+
+    - name: run new application container
+      ansible.builtin.command: >
+        docker run -d
+        --name {{ container_name }}
+        --restart unless-stopped
+        --env-file {{ app_dir}}/.env
+        -p 127.0.0.1:5000:5000
+        {{ docker_image }}
+
+  handlers:
+    - name: reload nginx
+      ansible.builtin.service:
+        name: nginx
+        state: reloaded
+
+
+      
+
